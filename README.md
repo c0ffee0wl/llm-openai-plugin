@@ -80,6 +80,14 @@ OpenAI: openai/gpt-5-nano-2025-08-07
 OpenAI: openai/gpt-5-codex
 OpenAI: openai/gpt-5-pro
 OpenAI: openai/gpt-5-pro-2025-10-06
+OpenAI: openai/gpt-5.1
+OpenAI: openai/gpt-5.1-chat-latest
+OpenAI: openai/gpt-5.1-codex
+OpenAI: openai/gpt-5.1-codex-mini
+OpenAI: openai/gpt-5.1-codex-max
+OpenAI: openai/gpt-5.2
+OpenAI: openai/gpt-5.2-chat-latest
+OpenAI: openai/gpt-5.2-pro
 ```
 <!-- [[[end]]] -->
 Add `--options` to see a full list of options that can be provided to each model.

@@ -22,10 +22,10 @@ build-backend = "setuptools.build_meta"
 py-modules = ["llm_openai"]
 
 [project.urls]
-Homepage = "https://github.com/simonw/llm-openai-plugin"
-Changelog = "https://github.com/simonw/llm-openai-plugin/releases"
-Issues = "https://github.com/simonw/llm-openai-plugin/issues"
-CI = "https://github.com/simonw/llm-openai-plugin/actions"
+Homepage = "https://github.com/c0ffee0wl/llm-openai-plugin"
+Changelog = "https://github.com/c0ffee0wl/llm-openai-plugin/releases"
+Issues = "https://github.com/c0ffee0wl/llm-openai-plugin/issues"
+CI = "https://github.com/c0ffee0wl/llm-openai-plugin/actions"
 
 [project.entry-points.llm]
 openai = "llm_openai"
