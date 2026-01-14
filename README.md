@@ -11,7 +11,10 @@ This plugin **is a preview**. LLM currently ships with OpenAI models as part of 
 
 This plugin implements those same models using the new [Responses API](https://platform.openai.com/docs/api-reference/responses).
 
-Currently the only reason to use this plugin over the LLM defaults is to access [o1-pro](https://platform.openai.com/docs/models/o1-pro), which can only be used via the Responses API.
+Reasons to use this plugin over the LLM defaults:
+
+- Access models like [o1-pro](https://platform.openai.com/docs/models/o1-pro) and gpt-5.1-codex which only work via the Responses API
+- Use Azure OpenAI endpoints for models that require the Responses API (e.g., gpt-5.1-codex on Azure)
 
 ## Installation
 
@@ -82,6 +85,74 @@ OpenAI: openai/gpt-5-pro-2025-10-06
 Add `--options` to see a full list of options that can be provided to each model.
 
 The `o3-streaming` model ID exists because o3 currently requires a verified organization in order to support streaming. If you have a verified organization you can use `o3-streaming` - everyone else should use `o3`.
+
+### Reasoning options
+
+Models with reasoning capabilities (o1, o3, gpt-5, etc.) support additional options:
+
+```bash
+llm -m openai/o3-mini -o reasoning_effort low "What is 2+2?"
+llm -m openai/o3-mini -o reasoning_effort high "Solve this complex problem"
+llm -m openai/o3-mini -o reasoning_summary concise "Explain quantum computing"
+```
+
+Available `reasoning_effort` values: `minimal`, `low`, `medium`, `high`
+
+Available `reasoning_summary` values: `auto`, `concise`, `detailed`
+
+## Configuring Azure and Custom Endpoints
+
+You can configure additional models that use the Responses API by creating a YAML configuration file. This is useful for Azure OpenAI deployments or local Responses API-compatible servers.
+
+Create `~/.config/io.datasette.llm/extra-responses-models.yaml` (on macOS: `~/Library/Application Support/io.datasette.llm/extra-responses-models.yaml`):
+
+```yaml
+# Azure OpenAI example
+- model_id: azure-codex
+  model_name: gpt-5.1-codex
+  api_base: "https://my-resource.openai.azure.com/openai/v1/"
+  api_key_name: azure-openai
+  vision: true
+  reasoning: true
+  aliases:
+    - codex
+
+# Local server example (no authentication)
+- model_id: local-model
+  model_name: my-local-model
+  api_base: "http://localhost:8080/v1/"
+  vision: false
+  reasoning: false
+```
+
+Then set your API key:
+
+```bash
+llm keys set azure-openai
+# Paste your Azure OpenAI API key
+```
+
+Now you can use the model:
+
+```bash
+llm -m azure-codex "Write a function to sort a list"
+llm -m azure-codex -o reasoning_effort high "Solve this problem"
+```
+
+### Configuration options
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `model_id` | Yes | Unique identifier for the model in LLM |
+| `model_name` | Yes | Model/deployment name sent to the API |
+| `api_base` | Yes | Base URL for the API endpoint |
+| `api_key_name` | No | Key alias from `llm keys` (omit for no auth) |
+| `aliases` | No | Alternative names for the model |
+| `headers` | No | Custom HTTP headers (dict) |
+| `vision` | No | Enable image/PDF attachments (default: false) |
+| `reasoning` | No | Enable reasoning options (default: false) |
+| `can_stream` | No | Enable streaming (default: true) |
+| `supports_schema` | No | Enable JSON schema output (default: true) |
 
 ## Development
 

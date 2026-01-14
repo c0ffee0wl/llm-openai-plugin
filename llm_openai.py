@@ -1,5 +1,6 @@
 import json
 from enum import Enum
+import yaml
 import llm
 from llm import (
     AsyncKeyModel,
@@ -75,6 +76,54 @@ def register_models(register):
             AsyncResponsesModel(model_id, **options),
         )
 
+    # Load extra Responses API models (for Azure, etc.)
+    extra_path = llm.user_dir() / "extra-responses-models.yaml"
+    if extra_path.exists():
+        with open(extra_path) as f:
+            extra_models = yaml.safe_load(f) or []
+        for extra_model in extra_models:
+            model_id = extra_model["model_id"]
+            model_name = extra_model["model_name"]
+            aliases = extra_model.get("aliases", [])
+            api_base = extra_model.get("api_base")
+            api_key_name = extra_model.get("api_key_name")
+            headers = extra_model.get("headers")
+
+            kwargs = {
+                "vision": extra_model.get("vision", False),
+                "reasoning": extra_model.get("reasoning", False),
+                "streaming": extra_model.get("can_stream", True),
+                "schemas": extra_model.get("supports_schema", True),
+            }
+
+            sync_model = ResponsesModel(
+                model_name,
+                api_base=api_base,
+                headers=headers,
+                **kwargs,
+            )
+            sync_model.model_id = model_id  # Override auto-generated "openai/" prefix
+
+            # Handle API key configuration
+            if api_base:
+                sync_model.needs_key = None  # Don't require key by default for custom endpoints
+            if api_key_name:
+                sync_model.needs_key = api_key_name
+
+            async_model = AsyncResponsesModel(
+                model_name,
+                api_base=api_base,
+                headers=headers,
+                **kwargs,
+            )
+            async_model.model_id = model_id
+            if api_base:
+                async_model.needs_key = None
+            if api_key_name:
+                async_model.needs_key = api_key_name
+
+            register(sync_model, async_model, aliases=aliases)
+
 
 class TruncationEnum(str, Enum):
     auto = "auto"
@@ -88,9 +137,16 @@ class ImageDetailEnum(str, Enum):
 
 
 class ReasoningEffortEnum(str, Enum):
+    minimal = "minimal"
     low = "low"
     medium = "medium"
     high = "high"
+
+
+class ReasoningSummaryEnum(str, Enum):
+    auto = "auto"
+    concise = "concise"
+    detailed = "detailed"
 
 
 class BaseOptions(Options):
@@ -155,8 +211,16 @@ class ReasoningOptions(Options):
     reasoning_effort: Optional[ReasoningEffortEnum] = Field(
         description=(
             "Constraints effort on reasoning for reasoning models. Currently supported "
-            "values are low, medium, and high. Reducing reasoning effort can result in "
+            "values are minimal, low, medium, and high. Reducing reasoning effort can result in "
             "faster responses and fewer tokens used on reasoning in a response."
+        ),
+        default=None,
+    )
+    reasoning_summary: Optional[ReasoningSummaryEnum] = Field(
+        description=(
+            "A summary of the reasoning performed by the model. This can be useful for "
+            "debugging and understanding the model's reasoning process. One of 'auto', "
+            "'concise', or 'detailed'."
         ),
         default=None,
     )
@@ -167,7 +231,8 @@ class _SharedResponses:
     key_env_var = "OPENAI_API_KEY"
 
     def __init__(
-        self, model_name, vision=False, streaming=True, schemas=True, reasoning=False
+        self, model_name, vision=False, streaming=True, schemas=True, reasoning=False,
+        api_base=None, headers=None
     ):
         self.model_id = "openai/" + model_name
         streaming_suffix = "-streaming"
@@ -176,6 +241,8 @@ class _SharedResponses:
         self.model_name = model_name
         self.can_stream = streaming
         self.supports_schema = schemas
+        self.api_base = api_base
+        self.headers = headers
         options = [BaseOptions]
         self.vision = vision
         if vision:
@@ -206,6 +273,26 @@ class _SharedResponses:
         response.set_usage(
             input=input_tokens, output=output_tokens, details=simplify_usage_dict(usage)
         )
+
+    def get_client(self, key, *, async_=False):
+        kwargs = {}
+        if self.api_base:
+            kwargs["base_url"] = self.api_base
+
+        # Handle API key
+        if self.needs_key:
+            kwargs["api_key"] = self.get_key(key)
+        else:
+            # OpenAI client requires an api_key even if not used
+            kwargs["api_key"] = "DUMMY_KEY"
+
+        if self.headers:
+            kwargs["default_headers"] = self.headers
+
+        if async_:
+            return openai.AsyncOpenAI(**kwargs)
+        else:
+            return openai.OpenAI(**kwargs)
 
     def _build_messages(self, prompt, conversation):
         messages = []
@@ -296,6 +383,17 @@ class _SharedResponses:
             value = getattr(prompt.options, option, None)
             if value is not None:
                 kwargs[option] = value
+
+        # Handle reasoning options
+        reasoning_effort = getattr(prompt.options, "reasoning_effort", None)
+        reasoning_summary = getattr(prompt.options, "reasoning_summary", None)
+        if reasoning_effort is not None or reasoning_summary is not None:
+            reasoning = {}
+            if reasoning_effort is not None:
+                reasoning["effort"] = reasoning_effort.value
+            if reasoning_summary is not None:
+                reasoning["summary"] = reasoning_summary.value
+            kwargs["reasoning"] = reasoning
 
         if prompt.tools:
             tool_defs = []
@@ -481,7 +579,7 @@ class ResponsesModel(_SharedResponses, KeyModel):
         conversation: Optional[Conversation],
         key: Optional[str],
     ) -> Iterator[str]:
-        client = openai.OpenAI(api_key=self.get_key(key))
+        client = self.get_client(key)
         kwargs = self._build_kwargs(prompt, conversation)
         kwargs["stream"] = stream
         if stream:
@@ -508,7 +606,7 @@ class AsyncResponsesModel(_SharedResponses, AsyncKeyModel):
         conversation: Optional[Conversation],
         key: Optional[str],
     ) -> AsyncGenerator[str, None]:
-        client = openai.AsyncOpenAI(api_key=self.get_key(key))
+        client = self.get_client(key, async_=True)
         kwargs = self._build_kwargs(prompt, conversation)
         kwargs["stream"] = stream
         if stream:
